@@ -9,67 +9,36 @@ jobs:
     runs-on: self-hosted
 
     steps:
-      - name: Checkout
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Generate Semantic Version
+      - name: Generate Version
         id: version
         uses: paulhatch/semantic-version@v5.4.0
-        with:
-          tag_prefix: "v"
-          format: "${major}.${minor}.${patch}"
-          major_pattern: "BREAKING CHANGE"
-          minor_pattern: "feat"
 
-      - name: Print Version
+      - name: Show Version
         run: echo "VERSION=${{ steps.version.outputs.version }}"
 
       - name: Build Docker Image
         run: |
-          VERSION=${{ steps.version.outputs.version }}
-          docker build --no-cache \
-            -t ghcr.io/${{ github.repository_owner }}/devsecops-app:$VERSION \
-            -t ghcr.io/${{ github.repository_owner }}/devsecops-app:latest \
-            .
+          docker build -t devsecops-app:latest -f app/Dockerfile app/
 
-            - name: Install Trivy
+      - name: Install Trivy
         run: |
           sudo apt-get update
           sudo apt-get install -y wget
           wget https://github.com/aquasecurity/trivy/releases/latest/download/trivy_0.50.1_Linux-64bit.deb
           sudo dpkg -i trivy_0.50.1_Linux-64bit.deb
 
-      - name: Scan Image with Trivy
-        run: |
-          trivy image ghcr.io/${{ github.repository_owner }}/devsecops-app:latest || true
-
+      - name: Trivy Scan
+        run: trivy image devsecops-app:latest
 
       - name: Login to GHCR
         run: echo "${{ secrets.GHCR_PAT }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
-      - name: Push Images
+      - name: Tag & Push Image
         run: |
-          VERSION=${{ steps.version.outputs.version }}
-          docker push ghcr.io/${{ github.repository_owner }}/devsecops-app:$VERSION
-          docker push ghcr.io/${{ github.repository_owner }}/devsecops-app:latest
+          docker tag devsecops-app:latest ghcr.io/abeerzahid19/devsecops-app:latest
+          docker push ghcr.io/abeerzahid19/devsecops-app:latest
 
-      - name: Create GHCR Secret
-        run: |
-          kubectl delete secret ghcr-secret --ignore-not-found=true
-          kubectl create secret docker-registry ghcr-secret \
-            --docker-server=ghcr.io \
-            --docker-username=${{ github.actor }} \
-            --docker-password=${{ secrets.GHCR_PAT }} \
-            --docker-email=dummy@example.com
-
-      - name: Apply Manifests
-        run: kubectl apply -f k8s/
-
-      - name: Patch Deployment With Version
-        run: |
-          VERSION=${{ steps.version.outputs.version }}
-          kubectl set image deployment/devsecops-app web=ghcr.io/${{ github.repository_owner }}/devsecops-app:$VERSION
-
-      - name: Wait for Rollout
-        run: kubectl rollout status deployment/devsecops-app
 
