@@ -2,7 +2,8 @@ name: DevSecOps CI/CD
 
 on:
   push:
-    branches: [ main ]
+    branches:
+      - main
 
 jobs:
   pipeline:
@@ -12,13 +13,6 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Generate Version
-        id: version
-        uses: paulhatch/semantic-version@v5.4.0
-
-      - name: Show Version
-        run: echo "VERSION=${{ steps.version.outputs.version }}"
-
       - name: Build Docker Image
         run: |
           docker build -t devsecops-app:latest -f app/Dockerfile app/
@@ -26,9 +20,11 @@ jobs:
       - name: Install Trivy
         run: |
           sudo apt-get update
-          sudo apt-get install -y wget
-          wget https://github.com/aquasecurity/trivy/releases/latest/download/trivy_0.50.1_Linux-64bit.deb
-          sudo dpkg -i trivy_0.50.1_Linux-64bit.deb
+          sudo apt-get install -y wget apt-transport-https gnupg lsb-release
+          wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo apt-key add -
+          echo "deb https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | sudo tee /etc/apt/sources.list.d/trivy.list
+          sudo apt-get update
+          sudo apt-get install -y trivy
 
       - name: Trivy Scan
         run: trivy image devsecops-app:latest
@@ -41,4 +37,7 @@ jobs:
           docker tag devsecops-app:latest ghcr.io/abeerzahid19/devsecops-app:latest
           docker push ghcr.io/abeerzahid19/devsecops-app:latest
 
+      - name: Deploy to Kubernetes
+        run: |
+          kubectl apply -f k8s/
 
